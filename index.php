@@ -538,7 +538,7 @@ if ($message) {
             $blocked  = !empty($u['blocked']) ? '🚫' : '✅';
             $sent     = $u['stats']['sent_anon'] ?? 0;
             $recv     = $u['stats']['received_anon'] ?? 0;
-            $link     = "https://t.me/YOUR_BOT_USERNAME?start=user_{$uid}";
+            $link     = "https://t.me/malekeshambot?start=user_{$uid}";
             $expires  = $u['link']['expires_at'] ?? null;
             $one_time = !empty($u['link']['one_time']);
             $used     = !empty($u['link']['used']);
@@ -620,7 +620,7 @@ if ($message) {
      ***********************************************/
     if ($text == '/mylink') {
         if ($from_id == $ADMIN_ID) {
-            $admin_link = "https://t.me/YOUR_BOT_USERNAME?start=anon";
+            $admin_link = "https://t.me/malekeshambot?start=anon";
             sendMessage($ADMIN_ID, "لینک ناشناس ادمین:\n{$admin_link}");
             exit;
         }
@@ -694,7 +694,7 @@ if ($message) {
         $msg = "سلام {$first} 👋\n\n"
              . "با این ربات می‌تونی پیام ناشناس بفرستی.\n\n"
              . "🔹 لینک ناشناس ادمین:\n"
-             . "<code>https://t.me/YOUR_BOT_USERNAME?start=anon</code>\n\n";
+             . "<code>https://t.me/malekeshambot?start=anon</code>\n\n";
 
         if ($from_id == $ADMIN_ID) {
             $msg .= "شما ادمین هستید.\n"
@@ -706,7 +706,7 @@ if ($message) {
             if ($approved) {
                 $msg .= "✅ لینک ناشناس شما فعال است.\n"
                       . "لینک شما:\n"
-                      . "<code>https://t.me/YOUR_BOT_USERNAME?start=user_{$from_id}</code>\n\n";
+                      . "<code>https://t.me/malekeshambot?start=user_{$from_id}</code>\n\n";
             } else {
                 $msg .= "برای دریافت لینک ناشناس اختصاصی، دستور /mylink را ارسال کنید.\n\n";
             }
