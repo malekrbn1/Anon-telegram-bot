@@ -12,18 +12,21 @@
  * - لینک‌دار شدن آیدی عددی (tg://user?id=...)
  *************************************************/
 
-// توکن ربات (همان مقدار قبلی را نگه دار)
+// توکن ربات (طبق مقدار نهایی تو)
 $BOT_TOKEN = "8402908611:AAFduJ2ho-RkNd6mztDvLb5O9FBk7ED7bxM";
 
-// آیدی عددی ادمین کل (همان مقدار قبلی را نگه دار)
+// آیدی عددی ادمین کل (طبق مقدار نهایی تو)
 $ADMIN_ID  = 5986250975;
 
+// یوزرنیم ربات (بدون @)
+$BOT_USERNAME = "malekeshambot";
+
 // فایل‌های ذخیره‌سازی
-$USERS_FILE    = __DIR__ . '/users.json';
-$SESSIONS_FILE = __DIR__ . '/sessions.json';
-$REQUESTS_FILE = __DIR__ . '/requests.json';
-$SPAM_FILE     = __DIR__ . '/spam.json';
-$STATS_FILE    = __DIR__ . '/stats.json';
+$USERS_FILE        = __DIR__ . '/users.json';
+$SESSIONS_FILE     = __DIR__ . '/sessions.json';
+$REQUESTS_FILE     = __DIR__ . '/requests.json';
+$SPAM_FILE         = __DIR__ . '/spam.json';
+$STATS_FILE        = __DIR__ . '/stats.json';
 $CUSTOM_LINKS_FILE = __DIR__ . '/custom_links.json'; // لینک‌های اختصاصی
 
 /*************************************************
@@ -315,9 +318,9 @@ function send_user_profile_photo($chat_id, $user_id, $caption = '')
     if (!empty($photos['ok']) && !empty($photos['result']['photos'][0][0]['file_id'])) {
         $file_id = $photos['result']['photos'][0][0]['file_id'];
         bot('sendPhoto', [
-            'chat_id' => $chat_id,
-            'photo'   => $file_id,
-            'caption' => $caption,
+            'chat_id'    => $chat_id,
+            'photo'      => $file_id,
+            'caption'    => $caption,
             'parse_mode' => 'HTML',
         ]);
         return true;
@@ -343,6 +346,8 @@ $callback = $update["callback_query"] ?? null;
  *************************************************/
 
 if ($callback) {
+    global $ADMIN_ID, $BOT_USERNAME;
+
     $cb_id   = $callback['id'];
     $data    = $callback['data'] ?? '';
     $from_id = $callback['from']['id'];
@@ -362,7 +367,8 @@ if ($callback) {
         approve_user_link($uid);
         remove_request($uid);
 
-        $bot_username = $msg['chat']['username'] ?? 'malekeshambot';
+        // استفاده از یوزرنیم ثابت ربات
+        $bot_username = $BOT_USERNAME;
         $link = "https://t.me/{$bot_username}?start=user_" . $uid;
 
         bot('answerCallbackQuery', [
@@ -420,7 +426,7 @@ if ($callback) {
  *************************************************/
 
 if ($message) {
-    global $ADMIN_ID, $USERS_FILE;
+    global $ADMIN_ID, $USERS_FILE, $BOT_USERNAME;
 
     $chat_id  = $message["chat"]["id"];
     $from     = $message["from"];
@@ -466,7 +472,7 @@ if ($message) {
         if (preg_match('/SenderID:\s*([\d]+)/', $rtxt, $m)) {
             $target_id = (int)$m[1];
 
-            if (!empty($text) && strpos($text, '/start') !== 0 && strpos($text, '/users') !== 0 && strpos($text, '/mylink') !== 0 && strpos($text, '/panel') !== 0 && strpos($text, '/broadcast') !== 0 && strpos($text, '/block') !== 0 && strpos($text, '/unblock') !== 0 && strpos($text, '/user') !== 0 && strpos($text, '/make_link') !== 0 && strpos($text, '/custom_request') !== 0 && strpos($text, '/mypanel') !== 0) {
+            if (!empty($text) && strpos($text, '/start') !== 0 && strpos($text, '/users') !== 0 && strpos($text, '/mylink') !== 0 && strpos($text, '/panel') !== 0 && strpos($text, '/broadcast') !== 0 && strpos($text, '/block') !== 0 && strpos($text, '/unblock') !== 0 && strpos($text, '/user') !== 0 && strpos($text, '/make_link') !== 0 && strpos($text, '/custom_request') !== 0 && strpos($text, '/mypanel') !== 0 && strpos($text, '/custom_link') !== 0) {
                 sendMessage($target_id, "📬 <b>پیام از طرف ادمین:</b>\n\n{$text}");
                 sendMessage($ADMIN_ID, "پیام متنی برای کاربر <a href=\"tg://user?id={$target_id}\">{$target_id}</a> ارسال شد ✔️");
                 exit;
@@ -602,7 +608,7 @@ if ($message) {
             $blocked  = !empty($u['blocked']) ? '🚫' : '✅';
             $sent     = $u['stats']['sent_anon'] ?? 0;
             $recv     = $u['stats']['received_anon'] ?? 0;
-            $link     = "https://t.me/malekeshambot?start=user_{$uid}";
+            $link     = "https://t.me/{$BOT_USERNAME}?start=user_{$uid}";
             $expires  = $u['link']['expires_at'] ?? null;
             $one_time = !empty($u['link']['one_time']);
             $used     = !empty($u['link']['used']);
@@ -706,7 +712,7 @@ if ($message) {
                 exit;
             }
             set_custom_link($uid, $slug);
-            $bot_username = "malekeshambot";
+            $bot_username = $BOT_USERNAME;
             $link = "https://t.me/{$bot_username}?start=custom_{$slug}";
             sendMessage($ADMIN_ID, "لینک اختصاصی برای کاربر <a href=\"tg://user?id={$uid}\">{$uid}</a> ساخته شد:\n<code>{$link}</code>");
             sendMessage($uid, "ادمین برای شما یک لینک اختصاصی ساخت:\n<code>{$link}</code>");
@@ -720,7 +726,6 @@ if ($message) {
                 sendMessage($ADMIN_ID, "کاربر یافت نشد.");
                 exit;
             }
-            // اینجا فقط اطلاع می‌دهیم که ادمین باید با /make_link برایش بسازد
             sendMessage($ADMIN_ID, "درخواست لینک اختصاصی برای کاربر <a href=\"tg://user?id={$uid}\">{$uid}</a> ثبت شد.\nبا دستور /make_link {$uid} slug لینک را بسازید.");
             sendMessage($uid, "ادمین درخواست لینک اختصاصی شما را دریافت کرد و به‌زودی لینک اختصاصی برای شما ساخته می‌شود.");
             exit;
@@ -732,8 +737,9 @@ if ($message) {
      ***********************************************/
     if ($text == '/mylink') {
         if ($from_id == $ADMIN_ID) {
-            $admin_link = "https://t.me/malekeshambot?start=anon";
-            sendMessage($ADMIN_ID, "لینک ناشناس ادمین:\n{$admin_link}");
+            $bot_username = $BOT_USERNAME;
+            $admin_link = "https://t.me/{$bot_username}?start=anon";
+            sendMessage($ADMIN_ID, "لینک ناشناس ادمین:\n<a href=\"{$admin_link}\">{$admin_link}</a>");
             exit;
         }
 
@@ -774,14 +780,13 @@ if ($message) {
             exit;
         }
         add_request($from_id, 'custom');
-        sendMessage($chat_id, "درخواست لینک اختصاصی شما برای ادمین ارسال شد ✅\nادمین پس از بررسی، لینک اختصاصی برای شما می‌سازد.");
-
         $txt = "درخواست لینک اختصاصی جدید:\n\n"
              . "SenderID: <a href=\"tg://user?id={$from_id}\">{$from_id}</a>\n"
              . ($username ? "Username: @{$username}\n" : "")
              . "نام: {$first}\n\n"
              . "نوع درخواست: لینک اختصاصی (custom)";
         sendMessage($ADMIN_ID, $txt);
+        sendMessage($chat_id, "درخواست لینک اختصاصی شما برای ادمین ارسال شد ✅\nادمین پس از بررسی، لینک اختصاصی برای شما می‌سازد.");
         exit;
     }
 
@@ -802,7 +807,7 @@ if ($message) {
         $uid      = $u['id'];
         $u_un     = $u['username'] ? '@' . $u['username'] : 'بدون یوزرنیم';
 
-        $bot_username = "malekeshambot";
+        $bot_username = $BOT_USERNAME;
         $link = $approved ? "https://t.me/{$bot_username}?start=user_{$uid}" : 'هنوز فعال نشده';
 
         $msg = "🧾 <b>پنل کاربری شما</b>\n\n"
@@ -901,7 +906,7 @@ if ($message) {
         $users = load_json($USERS_FILE);
         $approved = isset($users[$from_id]) ? ($users[$from_id]['approved'] ?? false) : false;
 
-        $bot_username = "malekeshambot";
+        $bot_username = $BOT_USERNAME;
         $admin_link   = "https://t.me/{$bot_username}?start=anon";
 
         if ($from_id == $ADMIN_ID) {
@@ -909,7 +914,7 @@ if ($message) {
                  . "این ربات یک سیستم کامل پیام ناشناس با پنل مدیریت و پنل کاربری است.\n\n"
                  . "📥 هر پیام از کاربران به صورت ناشناس برای شما ارسال می‌شود.\n"
                  . "📤 با Reply روی گزارش‌ها می‌توانید به کاربران پاسخ دهید.\n\n"
-                 . "🔗 لینک ناشناس ادمین:\n<code>{$admin_link}</code>\n\n"
+                 . "🔗 لینک ناشناس ادمین:\n<a href=\"{$admin_link}\">{$admin_link}</a>\n\n"
                  . "📌 می‌توانید برای کاربران لینک ناشناس بسازید، لینک اختصاصی تعریف کنید، لینک‌ها را محدود کنید و کاربران را مدیریت کنید.\n\n"
                  . "🛠 <b>دستورات مهم ادمین:</b>\n"
                  . "/panel - پنل ادمین و آمار کامل\n"
@@ -924,7 +929,8 @@ if ($message) {
                  . "/make_link ID slug - ساخت لینک اختصاصی\n"
                  . "/custom_request ID - تأیید درخواست لینک اختصاصی\n"
                  . "/mylink - لینک ناشناس ادمین\n\n"
-                 . "ℹ️ آیدی عددی کاربران در همه‌جا به صورت لینک قابل کلیک نمایش داده می‌شود.\n";
+                 . "ℹ️ آیدی عددی کاربران در همه‌جا به صورت لینک قابل کلیک نمایش داده می‌شود.\n"
+                 . "📌 کاربران می‌توانند درخواست لینک ناشناس بدهند؛ شما تأیید می‌کنید.\n";
             sendMessage($chat_id, $msg);
             exit;
         } else {
@@ -935,7 +941,7 @@ if ($message) {
                  . "این ربات برای ارسال و دریافت <b>پیام‌های ناشناس</b> ساخته شده است.\n\n"
                  . "📥 هر پیامی (متن یا مدیا) که اینجا بفرستی، به صورت ناشناس برای ادمین ارسال می‌شود.\n"
                  . "📤 اگر لینک ناشناس اختصاصی داشته باشی، دیگران می‌توانند به صورت ناشناس برای تو پیام بفرستند.\n\n"
-                 . "🔗 لینک ناشناس ادمین:\n<code>{$admin_link}</code>\n\n"
+                 . "🔗 لینک ناشناس ادمین:\n<a href=\"{$admin_link}\">{$admin_link}</a>\n\n"
                  . "📌 می‌توانید درخواست لینک ناشناس بدهید:\n"
                  . "با دستور <b>/mylink</b> درخواست لینک ناشناس کنید.\n"
                  . "با دستور <b>/custom_link</b> درخواست لینک اختصاصی (با اسلاگ خاص) بدهید.\n\n"
@@ -944,6 +950,7 @@ if ($message) {
                  . "🔐 ضداسپم فعال است؛ لطفاً پیام‌ها را پشت‌سرهم ارسال نکنید.\n\n"
                  . "وضعیت لینک شما: " . ($approved ? "فعال ✅" : "غیرفعال ❌") . "\n"
                  . ($approved ? "لینک شما:\n<code>{$user_link}</code>\n\n" : "برای فعال شدن لینک، ابتدا /mylink را ارسال کنید.\n\n")
+                 . "همچنین می‌توانید هر زمان بخواهید درخواست لینک ناشناس بدهید.\n"
                  . "هر زمان خواستی، فقط پیام بفرست؛ بقیه‌اش با ما 😉";
             sendMessage($chat_id, $msg);
             exit;
