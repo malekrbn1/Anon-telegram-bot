@@ -3,19 +3,20 @@
  * ربات پیام ناشناس حرفه‌ای (یک فایل PHP)
  * نسخه ارتقایافته با:
  * - حفظ کامل تمام امکانات قبلی
- * - لینک‌های ناشناس حرفه‌ای (انقضا، یک‌بارمصرف، وضعیت)
+ * - BOT_TOKEN / ADMIN_ID / BOT_USERNAME طبق مقادیر نهایی
+ * - لینک ناشناس تصادفی (بدون آیدی عددی در URL)
+ * - جلوگیری از ارسال پیام ناشناس به خود
  * - ضد اسپم
- * - مدیریت حرفه‌ای کاربران و پنل ادمین
- * - پنل کاربر
- * - لینک اختصاصی توسط ادمین و درخواست لینک اختصاصی
- * - نمایش عکس پروفایل کاربر برای ادمین
- * - لینک‌دار شدن آیدی عددی (tg://user?id=...)
+ * - پنل ادمین و پنل کاربر
+ * - لینک اختصاصی (custom slug)
+ * - درخواست لینک ناشناس و لینک اختصاصی
+ * - نمایش عکس پروفایل «گیرنده» چسبیده به گزارش (در همان پیام)
  *************************************************/
 
-// توکن ربات (طبق مقدار نهایی تو)
+// توکن ربات
 $BOT_TOKEN = "8402908611:AAFduJ2ho-RkNd6mztDvLb5O9FBk7ED7bxM";
 
-// آیدی عددی ادمین کل (طبق مقدار نهایی تو)
+// آیدی عددی ادمین
 $ADMIN_ID  = 5986250975;
 
 // یوزرنیم ربات (بدون @)
@@ -99,6 +100,7 @@ function add_user($user)
                 'expires_at' => null,
                 'one_time'   => false,
                 'used'       => false,
+                'token'      => null, // توکن تصادفی لینک
             ],
         ];
     } else {
@@ -113,7 +115,12 @@ function add_user($user)
                 'expires_at' => null,
                 'one_time'   => false,
                 'used'       => false,
+                'token'      => null,
             ];
+        } else {
+            if (!isset($users[$id]['link']['token'])) {
+                $users[$id]['link']['token'] = null;
+            }
         }
     }
     save_json($USERS_FILE, $users);
@@ -193,6 +200,7 @@ function approve_user_link($user_id)
                 'expires_at' => null,
                 'one_time'   => false,
                 'used'       => false,
+                'token'      => null,
             ],
         ];
     } else {
@@ -202,10 +210,41 @@ function approve_user_link($user_id)
                 'expires_at' => null,
                 'one_time'   => false,
                 'used'       => false,
+                'token'      => null,
             ];
+        } else {
+            if (!isset($users[$user_id]['link']['token'])) {
+                $users[$user_id]['link']['token'] = null;
+            }
         }
     }
     save_json($USERS_FILE, $users);
+}
+
+/*************************************************
+ * توکن تصادفی لینک
+ *************************************************/
+
+function generate_token($length = 16)
+{
+    $chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    $res = '';
+    for ($i = 0; $i < $length; $i++) {
+        $res .= $chars[random_int(0, strlen($chars) - 1)];
+    }
+    return $res;
+}
+
+function get_user_by_token($token)
+{
+    global $USERS_FILE;
+    $users = load_json($USERS_FILE);
+    foreach ($users as $u) {
+        if (!empty($u['link']['token']) && $u['link']['token'] === $token) {
+            return $u['id'];
+        }
+    }
+    return null;
 }
 
 /*************************************************
@@ -309,23 +348,16 @@ function get_stats()
  * عکس پروفایل
  *************************************************/
 
-function send_user_profile_photo($chat_id, $user_id, $caption = '')
+function get_user_profile_photo_id($user_id)
 {
     $photos = bot('getUserProfilePhotos', [
         'user_id' => $user_id,
         'limit'   => 1
     ]);
     if (!empty($photos['ok']) && !empty($photos['result']['photos'][0][0]['file_id'])) {
-        $file_id = $photos['result']['photos'][0][0]['file_id'];
-        bot('sendPhoto', [
-            'chat_id'    => $chat_id,
-            'photo'      => $file_id,
-            'caption'    => $caption,
-            'parse_mode' => 'HTML',
-        ]);
-        return true;
+        return $photos['result']['photos'][0][0]['file_id'];
     }
-    return false;
+    return null;
 }
 
 /*************************************************
@@ -346,7 +378,7 @@ $callback = $update["callback_query"] ?? null;
  *************************************************/
 
 if ($callback) {
-    global $ADMIN_ID, $BOT_USERNAME;
+    global $ADMIN_ID, $BOT_USERNAME, $USERS_FILE;
 
     $cb_id   = $callback['id'];
     $data    = $callback['data'] ?? '';
@@ -367,9 +399,21 @@ if ($callback) {
         approve_user_link($uid);
         remove_request($uid);
 
-        // استفاده از یوزرنیم ثابت ربات
+        // تولید توکن تصادفی برای لینک کاربر (اگر نداشت)
+        $users = load_json($USERS_FILE);
+        if (!isset($users[$uid])) {
+            // از قبل در approve_user_link ساخته شده، ولی برای اطمینان:
+            add_user(['id'=>$uid]);
+            $users = load_json($USERS_FILE);
+        }
+        if (empty($users[$uid]['link']['token'])) {
+            $users[$uid]['link']['token'] = generate_token(16);
+            save_json($USERS_FILE, $users);
+        }
+        $token = $users[$uid]['link']['token'];
+
         $bot_username = $BOT_USERNAME;
-        $link = "https://t.me/{$bot_username}?start=user_" . $uid;
+        $link = "https://t.me/{$bot_username}?start={$token}";
 
         bot('answerCallbackQuery', [
             'callback_query_id' => $cb_id,
@@ -499,7 +543,7 @@ if ($message) {
     }
 
     /***********************************************
-     * دستورات ادمین: /users /panel /broadcast /block /unblock /user /make_link /custom_request
+     * دستورات ادمین
      ***********************************************/
     if ($from_id == $ADMIN_ID && isset($text)) {
 
@@ -514,7 +558,7 @@ if ($message) {
                 $u_un = $u['username'] ? '@' . $u['username'] : 'بدون یوزرنیم';
                 $uid  = $u['id'];
                 $out .= $i++ . ") {$u_un} — <a href=\"tg://user?id={$uid}\">{$uid}</a>"
-                      . ($u['approved'] ? " ✅" : "")
+                      . (!empty($u['approved']) ? " ✅" : "")
                       . (!empty($u['blocked']) ? " 🚫" : "")
                       . "\n";
             }
@@ -539,7 +583,7 @@ if ($message) {
                  . "📥 پیام‌های ناشناس دریافت‌شده: <b>{$total_recv}</b>\n\n"
                  . "🛠 <b>دستورات مدیریتی:</b>\n"
                  . "/users - لیست کاربران\n"
-                 . "/user ID - اطلاعات کاربر + عکس پروفایل\n"
+                 . "/user ID - اطلاعات کاربر + لینک ناشناس\n"
                  . "/broadcast متن - ارسال پیام همگانی\n"
                  . "/block ID - بلاک کاربر\n"
                  . "/unblock ID - آن‌بلاک کاربر\n"
@@ -608,7 +652,14 @@ if ($message) {
             $blocked  = !empty($u['blocked']) ? '🚫' : '✅';
             $sent     = $u['stats']['sent_anon'] ?? 0;
             $recv     = $u['stats']['received_anon'] ?? 0;
-            $link     = "https://t.me/{$BOT_USERNAME}?start=user_{$uid}";
+
+            $token    = $u['link']['token'] ?? null;
+            if ($token) {
+                $link = "https://t.me/{$BOT_USERNAME}?start={$token}";
+            } else {
+                $link = "https://t.me/{$BOT_USERNAME}?start=user_{$uid}";
+            }
+
             $expires  = $u['link']['expires_at'] ?? null;
             $one_time = !empty($u['link']['one_time']);
             $used     = !empty($u['link']['used']);
@@ -635,10 +686,8 @@ if ($message) {
                  . "/link_reset {$uid}\n\n"
                  . "برای ساخت لینک اختصاصی:\n"
                  . "/make_link {$uid} slug";
-            sendMessage($ADMIN_ID, $msg);
 
-            // عکس پروفایل
-            send_user_profile_photo($ADMIN_ID, $uid, "📷 عکس پروفایل کاربر");
+            sendMessage($ADMIN_ID, $msg);
             exit;
         }
 
@@ -683,6 +732,7 @@ if ($message) {
                 'expires_at' => null,
                 'one_time'   => false,
                 'used'       => false,
+                'token'      => null,
             ];
             save_json($USERS_FILE, $users);
             sendMessage($ADMIN_ID, "تنظیمات لینک کاربر <a href=\"tg://user?id={$uid}\">{$uid}</a> ریست شد.");
@@ -807,8 +857,12 @@ if ($message) {
         $uid      = $u['id'];
         $u_un     = $u['username'] ? '@' . $u['username'] : 'بدون یوزرنیم';
 
-        $bot_username = $BOT_USERNAME;
-        $link = $approved ? "https://t.me/{$bot_username}?start=user_{$uid}" : 'هنوز فعال نشده';
+        $token    = $u['link']['token'] ?? null;
+        if ($token) {
+            $link = "https://t.me/{$BOT_USERNAME}?start={$token}";
+        } else {
+            $link = "https://t.me/{$BOT_USERNAME}?start=user_{$uid}";
+        }
 
         $msg = "🧾 <b>پنل کاربری شما</b>\n\n"
              . "👤 نام: {$u['first']}\n"
@@ -837,6 +891,11 @@ if ($message) {
 
         // لینک ناشناس به ادمین
         if ($start_param === 'anon') {
+            // جلوگیری از پیام به خود برای ادمین
+            if ($from_id == $ADMIN_ID) {
+                sendMessage($chat_id, "❌ نمی‌توانید به خودتان پیام ناشناس ارسال کنید.");
+                exit;
+            }
             set_session($from_id, $ADMIN_ID, 'admin');
             sendMessage($chat_id, "شما در حالت ارسال پیام ناشناس به ادمین قرار گرفتید ✅\n\nاولین پیام (متن یا مدیا) که بفرستید، به صورت ناشناس برای ادمین ارسال می‌شود.");
             exit;
@@ -850,6 +909,11 @@ if ($message) {
                 sendMessage($chat_id, "این لینک اختصاصی معتبر نیست یا کاربر مربوطه یافت نشد.");
                 exit;
             }
+            // جلوگیری از پیام به خود
+            if ($target_id == $from_id) {
+                sendMessage($chat_id, "❌ نمی‌توانید به خودتان پیام ناشناس ارسال کنید.");
+                exit;
+            }
             $users = load_json($USERS_FILE);
             if (!isset($users[$target_id]) || empty($users[$target_id]['approved'])) {
                 sendMessage($chat_id, "این لینک ناشناس فعال نیست یا کاربر هنوز تأیید نشده است.");
@@ -859,6 +923,7 @@ if ($message) {
                 'expires_at' => null,
                 'one_time'   => false,
                 'used'       => false,
+                'token'      => null,
             ];
             if ($link_info['expires_at'] && time() > $link_info['expires_at']) {
                 sendMessage($chat_id, "⏱ این لینک ناشناس منقضی شده است.");
@@ -873,10 +938,15 @@ if ($message) {
             exit;
         }
 
-        // لینک user_ID
-        if ($start_param && strpos($start_param, 'user_') === 0) {
-            $target_id = (int)substr($start_param, 5);
-            if ($target_id > 0) {
+        // لینک با توکن تصادفی
+        if ($start_param && !in_array(substr($start_param, 0, 5), ['user_', 'cust_', 'anon_'])) {
+            $target_id = get_user_by_token($start_param);
+            if ($target_id) {
+                // جلوگیری از پیام به خود
+                if ($target_id == $from_id) {
+                    sendMessage($chat_id, "❌ نمی‌توانید به خودتان پیام ناشناس ارسال کنید.");
+                    exit;
+                }
                 $users = load_json($USERS_FILE);
                 if (!isset($users[$target_id]) || empty($users[$target_id]['approved'])) {
                     sendMessage($chat_id, "این لینک ناشناس فعال نیست یا کاربر هنوز تأیید نشده است.");
@@ -886,6 +956,41 @@ if ($message) {
                     'expires_at' => null,
                     'one_time'   => false,
                     'used'       => false,
+                    'token'      => $start_param,
+                ];
+                if ($link_info['expires_at'] && time() > $link_info['expires_at']) {
+                    sendMessage($chat_id, "⏱ این لینک ناشناس منقضی شده است.");
+                    exit;
+                }
+                if (!empty($link_info['one_time']) && !empty($link_info['used'])) {
+                    sendMessage($chat_id, "این لینک ناشناس یک‌بارمصرف بوده و قبلاً استفاده شده است.");
+                    exit;
+                }
+                set_session($from_id, $target_id, 'user');
+                sendMessage($chat_id, "شما در حالت ارسال پیام ناشناس به کاربر با آیدی <a href=\"tg://user?id={$target_id}\">{$target_id}</a> قرار گرفتید ✅\n\nاولین پیام (متن یا مدیا) که بفرستید، به صورت ناشناس برای او ارسال می‌شود.");
+                exit;
+            }
+        }
+
+        // لینک قدیمی user_ID (برای سازگاری)
+        if ($start_param && strpos($start_param, 'user_') === 0) {
+            $target_id = (int)substr($start_param, 5);
+            if ($target_id > 0) {
+                // جلوگیری از پیام به خود
+                if ($target_id == $from_id) {
+                    sendMessage($chat_id, "❌ نمی‌توانید به خودتان پیام ناشناس ارسال کنید.");
+                    exit;
+                }
+                $users = load_json($USERS_FILE);
+                if (!isset($users[$target_id]) || empty($users[$target_id]['approved'])) {
+                    sendMessage($chat_id, "این لینک ناشناس فعال نیست یا کاربر هنوز تأیید نشده است.");
+                    exit;
+                }
+                $link_info = $users[$target_id]['link'] ?? [
+                    'expires_at' => null,
+                    'one_time'   => false,
+                    'used'       => false,
+                    'token'      => null,
                 ];
                 if ($link_info['expires_at'] && time() > $link_info['expires_at']) {
                     sendMessage($chat_id, "⏱ این لینک ناشناس منقضی شده است.");
@@ -902,7 +1007,7 @@ if ($message) {
             }
         }
 
-        // راهنمای کامل برای ادمین و کاربر در یک پیام
+        // راهنمای کامل برای ادمین و کاربر
         $users = load_json($USERS_FILE);
         $approved = isset($users[$from_id]) ? ($users[$from_id]['approved'] ?? false) : false;
 
@@ -919,7 +1024,7 @@ if ($message) {
                  . "🛠 <b>دستورات مهم ادمین:</b>\n"
                  . "/panel - پنل ادمین و آمار کامل\n"
                  . "/users - لیست کاربران\n"
-                 . "/user ID - اطلاعات کامل کاربر + عکس پروفایل\n"
+                 . "/user ID - اطلاعات کامل کاربر\n"
                  . "/broadcast متن - پیام همگانی\n"
                  . "/block ID - بلاک کاربر\n"
                  . "/unblock ID - آن‌بلاک کاربر\n"
@@ -935,7 +1040,13 @@ if ($message) {
             exit;
         } else {
             $uid = $from_id;
-            $user_link = $approved ? "https://t.me/{$bot_username}?start=user_{$uid}" : 'هنوز فعال نشده';
+            $u   = $users[$uid] ?? null;
+            $token = $u['link']['token'] ?? null;
+            if ($token) {
+                $user_link = "https://t.me/{$bot_username}?start={$token}";
+            } else {
+                $user_link = "https://t.me/{$bot_username}?start=user_{$uid}";
+            }
 
             $msg = "👋 <b>خوش آمدی {$first}!</b>\n\n"
                  . "این ربات برای ارسال و دریافت <b>پیام‌های ناشناس</b> ساخته شده است.\n\n"
@@ -951,6 +1062,7 @@ if ($message) {
                  . "وضعیت لینک شما: " . ($approved ? "فعال ✅" : "غیرفعال ❌") . "\n"
                  . ($approved ? "لینک شما:\n<code>{$user_link}</code>\n\n" : "برای فعال شدن لینک، ابتدا /mylink را ارسال کنید.\n\n")
                  . "همچنین می‌توانید هر زمان بخواهید درخواست لینک ناشناس بدهید.\n"
+                 . "در هنگام پیام استارت می‌توانید درخواست لینک ناشناس هم داشته باشید.\n"
                  . "هر زمان خواستی، فقط پیام بفرست؛ بقیه‌اش با ما 😉";
             sendMessage($chat_id, $msg);
             exit;
@@ -994,6 +1106,7 @@ if ($message) {
                 'expires_at' => null,
                 'one_time'   => false,
                 'used'       => false,
+                'token'      => null,
             ];
             if ($link_info['expires_at'] && time() > $link_info['expires_at']) {
                 sendMessage($chat_id, "⏱ این لینک ناشناس منقضی شده است.");
@@ -1011,6 +1124,7 @@ if ($message) {
             }
         }
 
+        // ارسال به گیرنده
         if ($is_text) {
             $txt_to_target = "📩 <b>یک پیام ناشناس برای شما ارسال شد:</b>\n\n{$text}";
             sendMessage($target_id, $txt_to_target);
@@ -1033,6 +1147,7 @@ if ($message) {
         save_json($USERS_FILE, $users);
 
         $target_label = ($target_type == 'admin') ? "ادمین" : "کاربر";
+
         $log = "📥 <b>پیام ناشناس جدید</b>\n\n"
              . "👤 <b>فرستنده:</b>\n"
              . "SenderID: <a href=\"tg://user?id={$from_id}\">{$from_id}</a>\n"
@@ -1044,19 +1159,31 @@ if ($message) {
 
         if ($is_text) {
             $log .= "📝 <b>متن پیام:</b>\n{$text}";
-            sendMessage($ADMIN_ID, $log);
         } else {
             $log .= "🖼 <b>پیام مدیا (بدون نمایش فرستنده به گیرنده)</b>";
+        }
+
+        // عکس پروفایل گیرنده چسبیده به گزارش (در همان پیام)
+        $receiver_photo_id = get_user_profile_photo_id($target_id);
+        if ($receiver_photo_id) {
+            bot('sendPhoto', [
+                'chat_id'    => $ADMIN_ID,
+                'photo'      => $receiver_photo_id,
+                'caption'    => $log,
+                'parse_mode' => 'HTML',
+            ]);
+        } else {
             sendMessage($ADMIN_ID, $log);
+        }
+
+        if (!$is_text) {
+            // مدیای اصلی را هم برای ادمین کپی می‌کنیم (برای مشاهده محتوا)
             bot('copyMessage', [
                 'from_chat_id' => $from_id,
                 'chat_id'      => $ADMIN_ID,
                 'message_id'   => $msg_id,
             ]);
         }
-
-        // عکس پروفایل فرستنده برای ادمین
-        send_user_profile_photo($ADMIN_ID, $from_id, "📷 عکس پروفایل فرستنده ناشناس");
 
         sendMessage($chat_id, "پیام ناشناس شما ارسال شد ✔️");
 
@@ -1093,27 +1220,46 @@ if ($message) {
         inc_stat('sent_anon');
         inc_stat('received_anon');
 
+        $target_id   = $ADMIN_ID;
+        $target_type = 'admin';
+
         $log = "📥 <b>پیام ناشناس جدید (مستقیم برای ادمین)</b>\n\n"
              . "👤 <b>فرستنده:</b>\n"
              . "SenderID: <a href=\"tg://user?id={$from_id}\">{$from_id}</a>\n"
              . ($username ? "Username: @{$username}\n" : "")
-             . "نام: {$first}\n\n";
+             . "نام: {$first}\n\n"
+             . "🎯 <b>گیرنده:</b>\n"
+             . "Type: ادمین\n"
+             . "UserID: <a href=\"tg://user?id={$target_id}\">{$target_id}</a>\n\n";
 
         if ($is_text) {
             $log .= "📝 <b>متن پیام:</b>\n{$text}";
-            sendMessage($ADMIN_ID, $log);
         } else {
             $log .= "🖼 <b>پیام مدیا</b>";
+        }
+
+        // عکس پروفایل گیرنده (ادمین) چسبیده به گزارش
+        $receiver_photo_id = get_user_profile_photo_id($target_id);
+        if ($receiver_photo_id) {
+            bot('sendPhoto', [
+                'chat_id'    => $ADMIN_ID,
+                'photo'      => $receiver_photo_id,
+                'caption'    => $log,
+                'parse_mode' => 'HTML',
+            ]);
+        } else {
             sendMessage($ADMIN_ID, $log);
+        }
+
+        if ($is_text) {
+            // متن برای ادمین در همان گزارش کافی است
+        } else {
             bot('copyMessage', [
                 'from_chat_id' => $from_id,
                 'chat_id'      => $ADMIN_ID,
                 'message_id'   => $msg_id,
             ]);
         }
-
-        // عکس پروفایل فرستنده برای ادمین
-        send_user_profile_photo($ADMIN_ID, $from_id, "📷 عکس پروفایل فرستنده ناشناس");
 
         sendMessage($chat_id, "پیام ناشناس شما برای ادمین ارسال شد ✔️");
         exit;
