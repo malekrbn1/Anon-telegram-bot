@@ -1,16 +1,11 @@
-FROM php:8.2-apache
+FROM php:8.2-cli
 
-# غیرفعال کردن تمام MPMهای اضافی
-RUN a2dismod mpm_event || true
-RUN a2dismod mpm_worker || true
+WORKDIR /app
 
-# فعال کردن فقط mpm_prefork (سازگار با PHP)
-RUN a2enmod mpm_prefork
+COPY . /app
 
-# نصب اکستنشن‌های لازم
-RUN docker-php-ext-install mysqli
+# اگر اکستنشنی لازم داری، اینجا نصب کن (اختیاری)
+# RUN docker-php-ext-install mysqli
 
-# کپی کردن سورس
-COPY . /var/www/html/
-
-EXPOSE 80
+# Railway متغیر PORT رو ست می‌کنه، ما هم از همون استفاده می‌کنیم
+CMD ["sh", "-c", "php -S 0.0.0.0:${PORT:-8000} index.php"]
