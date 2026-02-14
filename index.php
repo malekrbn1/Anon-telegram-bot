@@ -4,8 +4,12 @@
  * نسخه ارتقایافته با:
  * - حفظ کامل تمام امکانات قبلی
  * - لینک‌های ناشناس حرفه‌ای (انقضا، یک‌بارمصرف، وضعیت)
- * - ضد اسپم ساده و مؤثر
+ * - ضد اسپم
  * - مدیریت حرفه‌ای کاربران و پنل ادمین
+ * - پنل کاربر
+ * - لینک اختصاصی توسط ادمین و درخواست لینک اختصاصی
+ * - نمایش عکس پروفایل کاربر برای ادمین
+ * - لینک‌دار شدن آیدی عددی (tg://user?id=...)
  *************************************************/
 
 // توکن ربات (همان مقدار قبلی را نگه دار)
@@ -20,6 +24,7 @@ $SESSIONS_FILE = __DIR__ . '/sessions.json';
 $REQUESTS_FILE = __DIR__ . '/requests.json';
 $SPAM_FILE     = __DIR__ . '/spam.json';
 $STATS_FILE    = __DIR__ . '/stats.json';
+$CUSTOM_LINKS_FILE = __DIR__ . '/custom_links.json'; // لینک‌های اختصاصی
 
 /*************************************************
  * توابع کمکی
@@ -140,13 +145,14 @@ function clear_session($user_id)
     }
 }
 
-function add_request($user_id)
+function add_request($user_id, $type = 'normal')
 {
     global $REQUESTS_FILE;
     $req = load_json($REQUESTS_FILE);
     $req[$user_id] = [
         'user_id' => $user_id,
         'time'    => time(),
+        'type'    => $type, // normal یا custom
     ];
     save_json($REQUESTS_FILE, $req);
 }
@@ -197,6 +203,35 @@ function approve_user_link($user_id)
         }
     }
     save_json($USERS_FILE, $users);
+}
+
+/*************************************************
+ * لینک اختصاصی
+ *************************************************/
+
+function load_custom_links()
+{
+    global $CUSTOM_LINKS_FILE;
+    return load_json($CUSTOM_LINKS_FILE);
+}
+
+function save_custom_links($data)
+{
+    global $CUSTOM_LINKS_FILE;
+    save_json($CUSTOM_LINKS_FILE, $data);
+}
+
+function set_custom_link($user_id, $slug)
+{
+    $links = load_custom_links();
+    $links[$slug] = $user_id;
+    save_custom_links($links);
+}
+
+function get_user_by_custom_slug($slug)
+{
+    $links = load_custom_links();
+    return $links[$slug] ?? null;
 }
 
 /*************************************************
@@ -268,6 +303,29 @@ function get_stats()
 }
 
 /*************************************************
+ * عکس پروفایل
+ *************************************************/
+
+function send_user_profile_photo($chat_id, $user_id, $caption = '')
+{
+    $photos = bot('getUserProfilePhotos', [
+        'user_id' => $user_id,
+        'limit'   => 1
+    ]);
+    if (!empty($photos['ok']) && !empty($photos['result']['photos'][0][0]['file_id'])) {
+        $file_id = $photos['result']['photos'][0][0]['file_id'];
+        bot('sendPhoto', [
+            'chat_id' => $chat_id,
+            'photo'   => $file_id,
+            'caption' => $caption,
+            'parse_mode' => 'HTML',
+        ]);
+        return true;
+    }
+    return false;
+}
+
+/*************************************************
  * دریافت آپدیت
  *************************************************/
 
@@ -304,7 +362,7 @@ if ($callback) {
         approve_user_link($uid);
         remove_request($uid);
 
-        $bot_username = $msg['chat']['username'] ?? 'YOUR_BOT_USERNAME';
+        $bot_username = $msg['chat']['username'] ?? 'malekeshambot';
         $link = "https://t.me/{$bot_username}?start=user_" . $uid;
 
         bot('answerCallbackQuery', [
@@ -317,7 +375,7 @@ if ($callback) {
             bot('editMessageText', [
                 'chat_id'    => $msg['chat']['id'],
                 'message_id' => $msg['message_id'],
-                'text'       => "درخواست لینک کاربر با موفقیت تأیید شد.\n\nUserID: <code>{$uid}</code>\nلینک:\n{$link}",
+                'text'       => "درخواست لینک کاربر با موفقیت تأیید شد.\n\nUserID: <a href=\"tg://user?id={$uid}\">{$uid}</a>\nلینک:\n{$link}",
                 'parse_mode' => 'HTML',
             ]);
         }
@@ -340,7 +398,7 @@ if ($callback) {
             bot('editMessageText', [
                 'chat_id'    => $msg['chat']['id'],
                 'message_id' => $msg['message_id'],
-                'text'       => "درخواست لینک کاربر رد شد.\n\nUserID: <code>{$uid}</code>",
+                'text'       => "درخواست لینک کاربر رد شد.\n\nUserID: <a href=\"tg://user?id={$uid}\">{$uid}</a>",
                 'parse_mode' => 'HTML',
             ]);
         }
@@ -405,12 +463,12 @@ if ($message) {
     if ($from_id == $ADMIN_ID && $reply_to) {
         $rtxt = $reply_to['text'] ?? '';
 
-        if (preg_match('/SenderID:\s*(\d+)/', $rtxt, $m)) {
+        if (preg_match('/SenderID:\s*([\d]+)/', $rtxt, $m)) {
             $target_id = (int)$m[1];
 
-            if (!empty($text) && strpos($text, '/start') !== 0 && strpos($text, '/users') !== 0 && strpos($text, '/mylink') !== 0 && strpos($text, '/panel') !== 0 && strpos($text, '/broadcast') !== 0 && strpos($text, '/block') !== 0 && strpos($text, '/unblock') !== 0 && strpos($text, '/user') !== 0) {
+            if (!empty($text) && strpos($text, '/start') !== 0 && strpos($text, '/users') !== 0 && strpos($text, '/mylink') !== 0 && strpos($text, '/panel') !== 0 && strpos($text, '/broadcast') !== 0 && strpos($text, '/block') !== 0 && strpos($text, '/unblock') !== 0 && strpos($text, '/user') !== 0 && strpos($text, '/make_link') !== 0 && strpos($text, '/custom_request') !== 0 && strpos($text, '/mypanel') !== 0) {
                 sendMessage($target_id, "📬 <b>پیام از طرف ادمین:</b>\n\n{$text}");
-                sendMessage($ADMIN_ID, "پیام متنی برای کاربر <code>{$target_id}</code> ارسال شد ✔️");
+                sendMessage($ADMIN_ID, "پیام متنی برای کاربر <a href=\"tg://user?id={$target_id}\">{$target_id}</a> ارسال شد ✔️");
                 exit;
             }
 
@@ -428,14 +486,14 @@ if ($message) {
                     'message_id'   => $msg_id,
                 ]);
 
-                sendMessage($ADMIN_ID, "مدیا برای کاربر <code>{$target_id}</code> ارسال شد ✔️");
+                sendMessage($ADMIN_ID, "مدیا برای کاربر <a href=\"tg://user?id={$target_id}\">{$target_id}</a> ارسال شد ✔️");
                 exit;
             }
         }
     }
 
     /***********************************************
-     * دستورات ادمین: /users /panel /broadcast /block /unblock /user
+     * دستورات ادمین: /users /panel /broadcast /block /unblock /user /make_link /custom_request
      ***********************************************/
     if ($from_id == $ADMIN_ID && isset($text)) {
 
@@ -448,7 +506,8 @@ if ($message) {
             $i = 1;
             foreach ($users as $u) {
                 $u_un = $u['username'] ? '@' . $u['username'] : 'بدون یوزرنیم';
-                $out .= $i++ . ") {$u_un} — <code>{$u['id']}</code>"
+                $uid  = $u['id'];
+                $out .= $i++ . ") {$u_un} — <a href=\"tg://user?id={$uid}\">{$uid}</a>"
                       . ($u['approved'] ? " ✅" : "")
                       . (!empty($u['blocked']) ? " 🚫" : "")
                       . "\n";
@@ -472,13 +531,18 @@ if ($message) {
                  . "🔗 لینک‌های فعال: <b>{$total_links}</b>\n"
                  . "📨 پیام‌های ناشناس ارسال‌شده: <b>{$total_sent}</b>\n"
                  . "📥 پیام‌های ناشناس دریافت‌شده: <b>{$total_recv}</b>\n\n"
-                 . "دستورات:\n"
+                 . "🛠 <b>دستورات مدیریتی:</b>\n"
                  . "/users - لیست کاربران\n"
+                 . "/user ID - اطلاعات کاربر + عکس پروفایل\n"
                  . "/broadcast متن - ارسال پیام همگانی\n"
                  . "/block ID - بلاک کاربر\n"
                  . "/unblock ID - آن‌بلاک کاربر\n"
-                 . "/user ID - اطلاعات کاربر\n"
-                 . "/mylink - لینک ادمین\n";
+                 . "/link_expire ID ساعت - انقضای لینک\n"
+                 . "/link_onetime ID - لینک یک‌بارمصرف\n"
+                 . "/link_reset ID - ریست لینک\n"
+                 . "/make_link ID slug - ساخت لینک اختصاصی\n"
+                 . "/custom_request ID - تأیید درخواست لینک اختصاصی\n"
+                 . "/mylink - لینک ناشناس ادمین\n";
             sendMessage($ADMIN_ID, $msg);
             exit;
         }
@@ -510,7 +574,7 @@ if ($message) {
             }
             $users[$uid]['blocked'] = true;
             save_json($USERS_FILE, $users);
-            sendMessage($ADMIN_ID, "کاربر <code>{$uid}</code> بلاک شد 🚫");
+            sendMessage($ADMIN_ID, "کاربر <a href=\"tg://user?id={$uid}\">{$uid}</a> بلاک شد 🚫");
             exit;
         }
 
@@ -522,7 +586,7 @@ if ($message) {
             }
             $users[$uid]['blocked'] = false;
             save_json($USERS_FILE, $users);
-            sendMessage($ADMIN_ID, "کاربر <code>{$uid}</code> آن‌بلاک شد ✅");
+            sendMessage($ADMIN_ID, "کاربر <a href=\"tg://user?id={$uid}\">{$uid}</a> آن‌بلاک شد ✅");
             exit;
         }
 
@@ -548,7 +612,7 @@ if ($message) {
             $used_txt= $used ? 'استفاده شده' : 'استفاده نشده';
 
             $msg = "👤 <b>اطلاعات کاربر</b>\n\n"
-                 . "ID: <code>{$uid}</code>\n"
+                 . "ID: <a href=\"tg://user?id={$uid}\">{$uid}</a>\n"
                  . "Username: {$u_un}\n"
                  . "نام: {$u['first']}\n"
                  . "لینک فعال: {$approved}\n"
@@ -562,8 +626,13 @@ if ($message) {
                  . "دستورات لینک:\n"
                  . "/link_expire {$uid} ساعت\n"
                  . "/link_onetime {$uid}\n"
-                 . "/link_reset {$uid}";
+                 . "/link_reset {$uid}\n\n"
+                 . "برای ساخت لینک اختصاصی:\n"
+                 . "/make_link {$uid} slug";
             sendMessage($ADMIN_ID, $msg);
+
+            // عکس پروفایل
+            send_user_profile_photo($ADMIN_ID, $uid, "📷 عکس پروفایل کاربر");
             exit;
         }
 
@@ -582,7 +651,7 @@ if ($message) {
             $expires_at = time() + $hours * 3600;
             $users[$uid]['link']['expires_at'] = $expires_at;
             save_json($USERS_FILE, $users);
-            sendMessage($ADMIN_ID, "انقضای لینک کاربر <code>{$uid}</code> روی {$hours} ساعت تنظیم شد.");
+            sendMessage($ADMIN_ID, "انقضای لینک کاربر <a href=\"tg://user?id={$uid}\">{$uid}</a> روی {$hours} ساعت تنظیم شد.");
             exit;
         }
 
@@ -594,7 +663,7 @@ if ($message) {
             }
             $users[$uid]['link']['one_time'] = true;
             save_json($USERS_FILE, $users);
-            sendMessage($ADMIN_ID, "لینک کاربر <code>{$uid}</code> به حالت یک‌بارمصرف تنظیم شد.");
+            sendMessage($ADMIN_ID, "لینک کاربر <a href=\"tg://user?id={$uid}\">{$uid}</a> به حالت یک‌بارمصرف تنظیم شد.");
             exit;
         }
 
@@ -610,7 +679,50 @@ if ($message) {
                 'used'       => false,
             ];
             save_json($USERS_FILE, $users);
-            sendMessage($ADMIN_ID, "تنظیمات لینک کاربر <code>{$uid}</code> ریست شد.");
+            sendMessage($ADMIN_ID, "تنظیمات لینک کاربر <a href=\"tg://user?id={$uid}\">{$uid}</a> ریست شد.");
+            exit;
+        }
+
+        // ساخت لینک اختصاصی توسط ادمین: /make_link ID slug
+        if (strpos($text, '/make_link ') === 0) {
+            $parts = explode(' ', $text);
+            if (count($parts) < 3) {
+                sendMessage($ADMIN_ID, "فرمت: /make_link ID slug");
+                exit;
+            }
+            $uid  = (int)$parts[1];
+            $slug = trim($parts[2]);
+            if (!$uid || !isset($users[$uid])) {
+                sendMessage($ADMIN_ID, "کاربر یافت نشد.");
+                exit;
+            }
+            if (!preg_match('/^[a-zA-Z0-9_]+$/', $slug)) {
+                sendMessage($ADMIN_ID, "اسلاگ فقط می‌تواند شامل حروف، اعداد و زیرخط باشد.");
+                exit;
+            }
+            $links = load_custom_links();
+            if (isset($links[$slug])) {
+                sendMessage($ADMIN_ID, "این اسلاگ قبلاً استفاده شده است.");
+                exit;
+            }
+            set_custom_link($uid, $slug);
+            $bot_username = "malekeshambot";
+            $link = "https://t.me/{$bot_username}?start=custom_{$slug}";
+            sendMessage($ADMIN_ID, "لینک اختصاصی برای کاربر <a href=\"tg://user?id={$uid}\">{$uid}</a> ساخته شد:\n<code>{$link}</code>");
+            sendMessage($uid, "ادمین برای شما یک لینک اختصاصی ساخت:\n<code>{$link}</code>");
+            exit;
+        }
+
+        // تأیید درخواست لینک اختصاصی: /custom_request ID
+        if (strpos($text, '/custom_request ') === 0) {
+            $uid = (int)trim(substr($text, 16));
+            if (!$uid || !isset($users[$uid])) {
+                sendMessage($ADMIN_ID, "کاربر یافت نشد.");
+                exit;
+            }
+            // اینجا فقط اطلاع می‌دهیم که ادمین باید با /make_link برایش بسازد
+            sendMessage($ADMIN_ID, "درخواست لینک اختصاصی برای کاربر <a href=\"tg://user?id={$uid}\">{$uid}</a> ثبت شد.\nبا دستور /make_link {$uid} slug لینک را بسازید.");
+            sendMessage($uid, "ادمین درخواست لینک اختصاصی شما را دریافت کرد و به‌زودی لینک اختصاصی برای شما ساخته می‌شود.");
             exit;
         }
     }
@@ -630,7 +742,7 @@ if ($message) {
             exit;
         }
 
-        add_request($from_id);
+        add_request($from_id, 'normal');
         sendMessage($chat_id, "درخواست لینک ناشناس شما برای ادمین ارسال شد ✅\nپس از تأیید، لینک برای شما ارسال می‌شود.");
 
         $kb = [
@@ -642,7 +754,7 @@ if ($message) {
             ]
         ];
         $txt = "درخواست لینک ناشناس جدید:\n\n"
-             . "SenderID: <code>{$from_id}</code>\n"
+             . "SenderID: <a href=\"tg://user?id={$from_id}\">{$from_id}</a>\n"
              . ($username ? "Username: @{$username}\n" : "")
              . "نام: {$first}";
         sendMessage($ADMIN_ID, $txt, null, $kb);
@@ -650,16 +762,113 @@ if ($message) {
     }
 
     /***********************************************
-     * /start (با یا بدون پارامتر)
+     * درخواست لینک اختصاصی توسط کاربر: /custom_link
+     ***********************************************/
+    if ($text == '/custom_link') {
+        if ($from_id == $ADMIN_ID) {
+            sendMessage($chat_id, "ادمین می‌تواند مستقیماً با /make_link برای هر کاربر لینک اختصاصی بسازد.");
+            exit;
+        }
+        if (has_request($from_id)) {
+            sendMessage($chat_id, "درخواست شما قبلاً ثبت شده و در انتظار بررسی ادمین است.");
+            exit;
+        }
+        add_request($from_id, 'custom');
+        sendMessage($chat_id, "درخواست لینک اختصاصی شما برای ادمین ارسال شد ✅\nادمین پس از بررسی، لینک اختصاصی برای شما می‌سازد.");
+
+        $txt = "درخواست لینک اختصاصی جدید:\n\n"
+             . "SenderID: <a href=\"tg://user?id={$from_id}\">{$from_id}</a>\n"
+             . ($username ? "Username: @{$username}\n" : "")
+             . "نام: {$first}\n\n"
+             . "نوع درخواست: لینک اختصاصی (custom)";
+        sendMessage($ADMIN_ID, $txt);
+        exit;
+    }
+
+    /***********************************************
+     * پنل کاربر: /mypanel
+     ***********************************************/
+    if ($text == '/mypanel') {
+        $users = load_json($USERS_FILE);
+        $u = $users[$from_id] ?? null;
+        if (!$u) {
+            sendMessage($chat_id, "شما هنوز در سیستم ثبت نشده‌اید. یک بار /start بزنید.");
+            exit;
+        }
+        $approved = !empty($u['approved']);
+        $blocked  = !empty($u['blocked']);
+        $sent     = $u['stats']['sent_anon'] ?? 0;
+        $recv     = $u['stats']['received_anon'] ?? 0;
+        $uid      = $u['id'];
+        $u_un     = $u['username'] ? '@' . $u['username'] : 'بدون یوزرنیم';
+
+        $bot_username = "malekeshambot";
+        $link = $approved ? "https://t.me/{$bot_username}?start=user_{$uid}" : 'هنوز فعال نشده';
+
+        $msg = "🧾 <b>پنل کاربری شما</b>\n\n"
+             . "👤 نام: {$u['first']}\n"
+             . "🆔 آیدی عددی: <a href=\"tg://user?id={$uid}\">{$uid}</a>\n"
+             . "🔹 یوزرنیم: {$u_un}\n"
+             . "🚫 وضعیت بلاک: " . ($blocked ? 'بلاک شده' : 'آزاد') . "\n"
+             . "🔗 وضعیت لینک: " . ($approved ? 'فعال ✅' : 'غیرفعال ❌') . "\n\n"
+             . "📨 پیام‌های ناشناس ارسال‌شده: <b>{$sent}</b>\n"
+             . "📥 پیام‌های ناشناس دریافت‌شده: <b>{$recv}</b>\n\n";
+
+        if ($approved) {
+            $msg .= "🔗 لینک ناشناس شما:\n<code>{$link}</code>\n\n"
+                  . "در صورت نیاز به لینک اختصاصی، می‌توانید دستور /custom_link را ارسال کنید.\n";
+        } else {
+            $msg .= "برای فعال شدن لینک ناشناس، ابتدا با /mylink درخواست بدهید.\n";
+        }
+
+        sendMessage($chat_id, $msg);
+        exit;
+    }
+
+    /***********************************************
+     * /start (با یا بدون پارامتر) + راهنمای کامل
      ***********************************************/
     if (isset($text) && strpos($text, '/start') === 0) {
 
+        // لینک ناشناس به ادمین
         if ($start_param === 'anon') {
             set_session($from_id, $ADMIN_ID, 'admin');
             sendMessage($chat_id, "شما در حالت ارسال پیام ناشناس به ادمین قرار گرفتید ✅\n\nاولین پیام (متن یا مدیا) که بفرستید، به صورت ناشناس برای ادمین ارسال می‌شود.");
             exit;
         }
 
+        // لینک اختصاصی custom_slug
+        if ($start_param && strpos($start_param, 'custom_') === 0) {
+            $slug = substr($start_param, 7);
+            $target_id = get_user_by_custom_slug($slug);
+            if (!$target_id) {
+                sendMessage($chat_id, "این لینک اختصاصی معتبر نیست یا کاربر مربوطه یافت نشد.");
+                exit;
+            }
+            $users = load_json($USERS_FILE);
+            if (!isset($users[$target_id]) || empty($users[$target_id]['approved'])) {
+                sendMessage($chat_id, "این لینک ناشناس فعال نیست یا کاربر هنوز تأیید نشده است.");
+                exit;
+            }
+            $link_info = $users[$target_id]['link'] ?? [
+                'expires_at' => null,
+                'one_time'   => false,
+                'used'       => false,
+            ];
+            if ($link_info['expires_at'] && time() > $link_info['expires_at']) {
+                sendMessage($chat_id, "⏱ این لینک ناشناس منقضی شده است.");
+                exit;
+            }
+            if (!empty($link_info['one_time']) && !empty($link_info['used'])) {
+                sendMessage($chat_id, "این لینک ناشناس یک‌بارمصرف بوده و قبلاً استفاده شده است.");
+                exit;
+            }
+            set_session($from_id, $target_id, 'user');
+            sendMessage($chat_id, "شما در حالت ارسال پیام ناشناس به کاربر با آیدی <a href=\"tg://user?id={$target_id}\">{$target_id}</a> قرار گرفتید ✅\n\nاولین پیام (متن یا مدیا) که بفرستید، به صورت ناشناس برای او ارسال می‌شود.");
+            exit;
+        }
+
+        // لینک user_ID
         if ($start_param && strpos($start_param, 'user_') === 0) {
             $target_id = (int)substr($start_param, 5);
             if ($target_id > 0) {
@@ -683,38 +892,62 @@ if ($message) {
                 }
 
                 set_session($from_id, $target_id, 'user');
-                sendMessage($chat_id, "شما در حالت ارسال پیام ناشناس به کاربر با آیدی <code>{$target_id}</code> قرار گرفتید ✅\n\nاولین پیام (متن یا مدیا) که بفرستید، به صورت ناشناس برای او ارسال می‌شود.");
+                sendMessage($chat_id, "شما در حالت ارسال پیام ناشناس به کاربر با آیدی <a href=\"tg://user?id={$target_id}\">{$target_id}</a> قرار گرفتید ✅\n\nاولین پیام (متن یا مدیا) که بفرستید، به صورت ناشناس برای او ارسال می‌شود.");
                 exit;
             }
         }
 
+        // راهنمای کامل برای ادمین و کاربر در یک پیام
         $users = load_json($USERS_FILE);
         $approved = isset($users[$from_id]) ? ($users[$from_id]['approved'] ?? false) : false;
 
-        $msg = "سلام {$first} 👋\n\n"
-             . "با این ربات می‌تونی پیام ناشناس بفرستی.\n\n"
-             . "🔹 لینک ناشناس ادمین:\n"
-             . "<code>https://t.me/malekeshambot?start=anon</code>\n\n";
+        $bot_username = "malekeshambot";
+        $admin_link   = "https://t.me/{$bot_username}?start=anon";
 
         if ($from_id == $ADMIN_ID) {
-            $msg .= "شما ادمین هستید.\n"
-                  . "دستورات مهم:\n"
-                  . "/panel - پنل ادمین\n"
-                  . "/users - لیست کاربران\n"
-                  . "/mylink - لینک ناشناس ادمین\n";
+            $msg = "👑 <b>خوش آمدی ادمین!</b>\n\n"
+                 . "این ربات یک سیستم کامل پیام ناشناس با پنل مدیریت و پنل کاربری است.\n\n"
+                 . "📥 هر پیام از کاربران به صورت ناشناس برای شما ارسال می‌شود.\n"
+                 . "📤 با Reply روی گزارش‌ها می‌توانید به کاربران پاسخ دهید.\n\n"
+                 . "🔗 لینک ناشناس ادمین:\n<code>{$admin_link}</code>\n\n"
+                 . "📌 می‌توانید برای کاربران لینک ناشناس بسازید، لینک اختصاصی تعریف کنید، لینک‌ها را محدود کنید و کاربران را مدیریت کنید.\n\n"
+                 . "🛠 <b>دستورات مهم ادمین:</b>\n"
+                 . "/panel - پنل ادمین و آمار کامل\n"
+                 . "/users - لیست کاربران\n"
+                 . "/user ID - اطلاعات کامل کاربر + عکس پروفایل\n"
+                 . "/broadcast متن - پیام همگانی\n"
+                 . "/block ID - بلاک کاربر\n"
+                 . "/unblock ID - آن‌بلاک کاربر\n"
+                 . "/link_expire ID ساعت - انقضای لینک\n"
+                 . "/link_onetime ID - لینک یک‌بارمصرف\n"
+                 . "/link_reset ID - ریست لینک\n"
+                 . "/make_link ID slug - ساخت لینک اختصاصی\n"
+                 . "/custom_request ID - تأیید درخواست لینک اختصاصی\n"
+                 . "/mylink - لینک ناشناس ادمین\n\n"
+                 . "ℹ️ آیدی عددی کاربران در همه‌جا به صورت لینک قابل کلیک نمایش داده می‌شود.\n";
+            sendMessage($chat_id, $msg);
+            exit;
         } else {
-            if ($approved) {
-                $msg .= "✅ لینک ناشناس شما فعال است.\n"
-                      . "لینک شما:\n"
-                      . "<code>https://t.me/malekeshambot?start=user_{$from_id}</code>\n\n";
-            } else {
-                $msg .= "برای دریافت لینک ناشناس اختصاصی، دستور /mylink را ارسال کنید.\n\n";
-            }
-            $msg .= "همچنین هر پیامی بدون لینک خاص بفرستی، به صورت ناشناس برای ادمین ارسال می‌شود.";
-        }
+            $uid = $from_id;
+            $user_link = $approved ? "https://t.me/{$bot_username}?start=user_{$uid}" : 'هنوز فعال نشده';
 
-        sendMessage($chat_id, $msg);
-        exit;
+            $msg = "👋 <b>خوش آمدی {$first}!</b>\n\n"
+                 . "این ربات برای ارسال و دریافت <b>پیام‌های ناشناس</b> ساخته شده است.\n\n"
+                 . "📥 هر پیامی (متن یا مدیا) که اینجا بفرستی، به صورت ناشناس برای ادمین ارسال می‌شود.\n"
+                 . "📤 اگر لینک ناشناس اختصاصی داشته باشی، دیگران می‌توانند به صورت ناشناس برای تو پیام بفرستند.\n\n"
+                 . "🔗 لینک ناشناس ادمین:\n<code>{$admin_link}</code>\n\n"
+                 . "📌 می‌توانید درخواست لینک ناشناس بدهید:\n"
+                 . "با دستور <b>/mylink</b> درخواست لینک ناشناس کنید.\n"
+                 . "با دستور <b>/custom_link</b> درخواست لینک اختصاصی (با اسلاگ خاص) بدهید.\n\n"
+                 . "🧾 <b>پنل کاربری شما:</b>\n"
+                 . "با دستور <b>/mypanel</b> می‌توانید وضعیت لینک، آمار پیام‌ها و اطلاعات خود را ببینید.\n\n"
+                 . "🔐 ضداسپم فعال است؛ لطفاً پیام‌ها را پشت‌سرهم ارسال نکنید.\n\n"
+                 . "وضعیت لینک شما: " . ($approved ? "فعال ✅" : "غیرفعال ❌") . "\n"
+                 . ($approved ? "لینک شما:\n<code>{$user_link}</code>\n\n" : "برای فعال شدن لینک، ابتدا /mylink را ارسال کنید.\n\n")
+                 . "هر زمان خواستی، فقط پیام بفرست؛ بقیه‌اش با ما 😉";
+            sendMessage($chat_id, $msg);
+            exit;
+        }
     }
 
     /***********************************************
@@ -795,12 +1028,12 @@ if ($message) {
         $target_label = ($target_type == 'admin') ? "ادمین" : "کاربر";
         $log = "📥 <b>پیام ناشناس جدید</b>\n\n"
              . "👤 <b>فرستنده:</b>\n"
-             . "SenderID: <code>{$from_id}</code>\n"
+             . "SenderID: <a href=\"tg://user?id={$from_id}\">{$from_id}</a>\n"
              . ($username ? "Username: @{$username}\n" : "")
              . "نام: {$first}\n\n"
              . "🎯 <b>گیرنده:</b>\n"
              . "Type: {$target_label}\n"
-             . "UserID: <code>{$target_id}</code>\n\n";
+             . "UserID: <a href=\"tg://user?id={$target_id}\">{$target_id}</a>\n\n";
 
         if ($is_text) {
             $log .= "📝 <b>متن پیام:</b>\n{$text}";
@@ -814,6 +1047,9 @@ if ($message) {
                 'message_id'   => $msg_id,
             ]);
         }
+
+        // عکس پروفایل فرستنده برای ادمین
+        send_user_profile_photo($ADMIN_ID, $from_id, "📷 عکس پروفایل فرستنده ناشناس");
 
         sendMessage($chat_id, "پیام ناشناس شما ارسال شد ✔️");
 
@@ -852,7 +1088,7 @@ if ($message) {
 
         $log = "📥 <b>پیام ناشناس جدید (مستقیم برای ادمین)</b>\n\n"
              . "👤 <b>فرستنده:</b>\n"
-             . "SenderID: <code>{$from_id}</code>\n"
+             . "SenderID: <a href=\"tg://user?id={$from_id}\">{$from_id}</a>\n"
              . ($username ? "Username: @{$username}\n" : "")
              . "نام: {$first}\n\n";
 
@@ -868,6 +1104,9 @@ if ($message) {
                 'message_id'   => $msg_id,
             ]);
         }
+
+        // عکس پروفایل فرستنده برای ادمین
+        send_user_profile_photo($ADMIN_ID, $from_id, "📷 عکس پروفایل فرستنده ناشناس");
 
         sendMessage($chat_id, "پیام ناشناس شما برای ادمین ارسال شد ✔️");
         exit;
